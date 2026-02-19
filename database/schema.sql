@@ -166,7 +166,7 @@ CREATE TABLE IF NOT EXISTS contact_info (
 
 -- Insert default contact info
 INSERT INTO contact_info (phone, email, address, operating_hours, whatsapp) VALUES 
-('+254 700 000 000', 'info@secureguard.co.ke', 'Nairobi, Kenya', 'Mon - Sat: 8:00 AM - 6:00 PM', '+254700000000');
+('+254 700 000 000', 'info@secureguard.co.ke', 'Nairobi, Kenya', 'Mon - Sat: 8:00 AM - 6:00 PM', '+254790590653');
 
 -- Site Settings Table
 CREATE TABLE IF NOT EXISTS settings (

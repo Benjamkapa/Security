@@ -281,7 +281,7 @@ function App() {
                     <a href="#contact" className="btn btn-primary">
                       Request a Quote
                     </a>
-                    <a href="tel:+254700000000" className="btn btn-secondary">
+                    <a href="tel:+254790590653" className="btn btn-secondary">
                       Call Now
                     </a>
                   </div>
@@ -681,7 +681,7 @@ function App() {
                   <div className="footer-column">
                     <h4>Contact Info</h4>
                     <div className="footer-links">
-                      <a href="tel:+254700000000">+254 700 000 000</a>
+                      <a href="tel:+254790590653">+254 790 590 653</a>
                       <a href="mailto:info@secureguard.co.ke">
                         info@secureguard.co.ke
                       </a>
@@ -713,7 +713,7 @@ function App() {
 
               {/* WHATSAPP FLOATING BUTTON */}
               <a
-                href="https://wa.me/254700000000?text=Hi, I'm interested in your security services"
+                href="https://wa.me/254790590653?text=Hi, I'm interested in your security services"
                 className="whatsapp-float"
                 target="_blank"
                 rel="noopener noreferrer"

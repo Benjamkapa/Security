@@ -31,7 +31,7 @@ db.exec(`
 function seedAdminUsers() {
   const admins = [
     {
-      username: "admin",
+      username: "adminSecureGuard",
       password: "admin123",
       email: "admin@secureguard.co.ke",
       role: "admin",
