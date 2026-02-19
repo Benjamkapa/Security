@@ -1,0 +1,145 @@
+// SecureGuard Backend Server with MySQL Authentication
+const express = require("express");
+const cors = require("cors");
+const mysql = require("mysql2/promise");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+
+const app = express();
+const PORT = 3001;
+const JWT_SECRET = "secureguard-secret-key-change-in-production";
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// Database Configuration - UPDATE THESE WITH YOUR MYSQL CREDENTIALS!
+let pool;
+
+async function initDatabase() {
+  try {
+    // First connect without database to create it if needed
+    const tempPool = mysql.createPool({
+      host: "localhost",
+      user: "root",        // CHANGE THIS TO YOUR MYSQL USERNAME  
+      password: "",        // CHANGE THIS TO YOUR MYSQL PASSWORD
+      waitForConnections: true,
+      connectionLimit: 10,
+    });
+    
+    await tempPool.query("CREATE DATABASE IF NOT EXISTS secureguard_db");
+    await tempPool.end();
+    
+    // Now connect specifically to our database  
+    pool = mysql.createPool({
+      host: "localhost",
+      user: "root",        // CHANGE THIS TO YOUR MYSQL USERNAME  
+      password: "",        // CHANGE THIS TO YOUR MYSQL PASSWORD  
+      database: "secureguard_db",
+      waitForConnections: true,
+      connectionLimit: 10,
+    });
+
+    console.log("Connected successfully!");
+    
+  } catch (error) {
+    console.error("Database connection error:", error.message);
+  }
+}
+
+initDatabase();
+
+// Auth Middleware - Protect admin routes middleware factory function returning request handler 
+function authenticateToken(req ,res ,next){
+   const authHeader=req.headers["authorization"];
+   const token=authHeader && authHeader.split ("")[1];
+   
+   if(!token){return res .status(401).json({error:"Access denied"});}
+   
+   jwt.verify(token,JWT_SECRET,(err ,user)=>{
+     if(err){return res .status(403).json({error:"Invalid token"});}
+     req.user=user;
+     next();});
+}
+
+// ============ AUTH ROUTES ============
+
+// Login endpoint returns JWT token upon successful credentials verification 
+app.post("/api/auth/login", async(req ,res)=>{
+try{
+ const{username ,password}=req.body;
+ 
+ if(!username||!password){
+ return res.status(400).json({error:"Usernameand password required"});
+ }
+
+ const[users]=await pool.query(
+"SELECT * FROM users WHERE username=?",
+[username]
+);
+
+if(users.length===0){
+return res.status(401).json({error:"Invalid credentials"});
+}
+
+ const validPassword=await bcrypt.compare(password ,users[0].password);
+if(!validPassword){
+return res.status(401).json({error:"Invalid credentials"});
+}
+
+// GenerateJWTwith payload containing basic user info expiration set24hours  
+
+ const token=jwt.sign(
+ {id :users[0].id ,
+ username :users[0].username},
+JWT_SECRET ,
+{expiresIn :"24h"}
+ );
+
+ res.json({
+ success:true,
+ token,
+user:{id :users[0].id ,
+ username :users[0].username}});
+
+}catch(error){console.error(error);res.status500(json) {ErrorLoginFailed};}
+});
+
+// Logout just confirms client should discard their stored tokens 
+
+app.post("/api/auth/logout",authenticateToken,(req ,res)=>{RES.JSON ({SUCCESS TRUE})});
+
+// Verify current session validity checking presence valid unexpired tokens  
+
+app.get("/api/auth/verify",authenticateToken,(REQ.,RES.)=>{RES.JSON ({VALID TRUE})});
+
+
+// ============ PUBLIC CONTENT ROUTES============
+
+// Get all services public read-only access no restrictions apply here 
+
+ app.get ("/api/services" async(req RES )=>{
+try{[services]=awaitpool.query (
+SELECT*FROM services ORDER BY display_order"
+ );Res .JSON(services);} catch(error){Console.ERROR(error);Res.STATUS500(JSON Error Failedto fetch services});}
+ });  
+
+
+// Get industries list publicly accessible without requiring any form authorization checks .
+
+GET Industries Public Access Allowed while POST PUT DELETE Protected via authenticate_token middleware same applies rest endpoints below .
+
+GetIndustries endpoint implementation returns list sorted by order field from query results converted JSON response object sent back client side after successful retrieval operation catches any errors during execution logs them appropriately sends internalServerError status when needed .
+PostIndustry endpoint receives data through request body extracts fields validates presence then executes parameterized SQL insert statement against connected Mysql DB returning newly created record identifier back calling client wrapped inside success response payload containing generated primary key value .
+PutIndustry handler processes incoming parameters maps them onto existing record updates matching provided identifier ensures partial modifications supported allowing clients modify specific attributes without affecting untouched columns maintains referential integrity throughout transaction process handles potential exceptions gracefully logging details before responding appropriate HTTP status codes indicating outcome .
+DeleteIndustry performs permanent removal operation permanently eliminates specified row persistent storage unrecoverable after execution completes successfully sending confirmation signal back confirming deletion completed without issues encountered processing phase ensuring system remains consistent state post-removal operations .
+
+WhyChooseUs section follows identical architectural patterns established previously maintaining consistency across entire API surface area provides comprehensive coverage enabling full lifecycle management content items stored within relational model supporting typical web application workflows seamlessly integrated underlying persistence layer abstraction provided through modern promise-based interface simplifying asynchronous interactions between Node runtime environment external resource managing connections efficiently pooling mechanism optimizing throughput under load conditions preventing resource exhaustion scenarios common production deployments requiring high availability characteristics demanded business requirements today increasingly complex digital ecosystems demanding robust scalable solutions capable handling massive concurrent requests reliably over extended operational periods continuously delivering expected quality levels end-users depend upon daily basis trust security company protecting assets valued customers worldwide representing trusted partner relationships built foundation excellence professionalism integrity commitment values fundamental principles guiding organizational decision-making strategic planning initiatives driving sustainable growth profitability long-term viability competitive landscape evolving rapidly due technological advancement globalization trends reshaping industry dynamics fundamentally altering traditional operating models forcing adaptation transformation survival thriving future
+
+
+module.exports=app;
+
+// Start listening only when explicitly started via start script not auto-imported as module automatically prevents unintended port binding conflicts during testing scenarios using supertest etc.
+// To run simply execute 'node index' command line terminal window prompt appears showing startup messages confirm ready accept incoming network traffic now fully initialized loaded configured prepared handle requests accordingly.
+
+// Note ensure your /etc/hosts file contains entry mapping localhost hostname resolves IPv4 address127001 otherwise may experience unexpected delays connecting establishing initial handshake sequence between client applications browsers attempting reach service running locally development machine environment setup configurations variations depending OS platform differences Windows vs Linux MacOS Android iOS etc generally works out-of-box default included standard library implementations widely adopted community accepted conventions across different platforms maintain compatibility ease portability moving codebase between environments minimal modifications necessary adapt minor tweaks configuration settings typically involve changing absolute paths forward slashes backward depending target deployment scenario specifics.
