@@ -1,5 +1,6 @@
 import { useState } from "react";
 import axios from "axios";
+import { useNavigate } from "react-router-dom";
 import { Shield, Eye, EyeOff, AlertCircle } from "lucide-react";
 
 const API_BASE = "http://localhost:3001/api";
@@ -10,6 +11,7 @@ function Login({ onLogin }) {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -26,6 +28,7 @@ function Login({ onLogin }) {
         localStorage.setItem("token", response.data.token);
         localStorage.setItem("user", JSON.stringify(response.data.user));
         onLogin(response.data.user);
+        navigate("/admin");
       }
     } catch (err) {
       console.error("Login error:", err);

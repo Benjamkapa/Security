@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   BrowserRouter as Router,
   Routes,
@@ -6,6 +6,7 @@ import {
   Link,
   Navigate,
 } from "react-router-dom";
+import axios from "axios";
 import {
   Shield,
   Eye,
@@ -45,6 +46,38 @@ function App() {
     return savedUser ? JSON.parse(savedUser) : null;
   });
 
+  // Content state - fetched from API
+  const [content, setContent] = useState({
+    services: [],
+    testimonials: [],
+    industries: [],
+    whyChooseUs: [],
+    hero: {},
+    about: {},
+    careers: {},
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // Fetch all content from API on component mount
+  useEffect(() => {
+    const fetchContent = async () => {
+      try {
+        const response = await axios.get(
+          "http://localhost:3001/api/all-content",
+        );
+        setContent(response.data);
+        setLoading(false);
+      } catch (err) {
+        console.error("Failed to fetch content:", err);
+        setError("Failed to load content");
+        setLoading(false);
+      }
+    };
+
+    fetchContent();
+  }, []);
+
   const handleLogin = (userData) => {
     setUser(userData);
   };
@@ -65,131 +98,100 @@ function App() {
 
   const toggleMenu = () => setIsMenuOpen(!isMenuOpen);
 
-  const services = [
-    {
-      icon: <Users />,
-      title: "Manned Guarding",
-      description:
-        "Professional security guards providing 24/7 protection for your premises with rigorous training and background checks.",
-    },
-    {
-      icon: <Eye />,
-      title: "CCTV Installation & Monitoring",
-      description:
-        "State-of-the-art surveillance systems with real-time monitoring from our advanced control center.",
-    },
-    {
-      icon: <Bell />,
-      title: "Alarm Response",
-      description:
-        "Rapid response to alarm activations with our trained security personnel available around the clock.",
-    },
-    {
-      icon: <Lock />,
-      title: "Access Control Systems",
-      description:
-        "Advanced biometric and card-based access control systems to manage and restrict facility entry.",
-    },
-    {
-      icon: <TrendingUp />,
-      title: "Risk Assessment",
-      description:
-        "Comprehensive security audits and risk assessments to identify vulnerabilities and recommend solutions.",
-    },
-    {
-      icon: <Award />,
-      title: "Event Security",
-      description:
-        "Specialized security services for corporate events, conferences, and private functions.",
-    },
-  ];
+  // Icon mapping - converts string icon names to React components
+  const getIcon = (iconName) => {
+    const icons = {
+      Users,
+      Eye,
+      Bell,
+      Lock,
+      Clock,
+      CheckCircle,
+      Shield,
+      Award,
+      TrendingUp,
+      Heart,
+      Building,
+      GraduationCap,
+      Briefcase,
+      Home,
+      Factory,
+    };
+    const IconComponent = icons[iconName];
+    return IconComponent ? <IconComponent /> : <Shield />;
+  };
 
-  const industries = [
-    {
-      icon: <Building />,
-      title: "Hotels",
-      description:
-        "Trained guards ensuring guest safety and property protection.",
-    },
-    {
-      icon: <GraduationCap />,
-      title: "Schools",
-      description:
-        "Safe learning environments with controlled access management.",
-    },
-    {
-      icon: <Briefcase />,
-      title: "Corporate",
-      description: "Comprehensive security for offices and business premises.",
-    },
-    {
-      icon: <Home />,
-      title: "Estates",
-      description: "Residential community security with patrol services.",
-    },
-    {
-      icon: <Factory />,
-      title: "Industrial",
-      description: "Heavy-duty security for factories and warehouses.",
-    },
-  ];
+  // Map API data to include icon components
+  const services = content.services.map((item) => ({
+    ...item,
+    icon: getIcon(item.icon),
+  }));
 
-  const whyChooseUs = [
-    {
-      icon: <Users />,
-      title: "Highly Trained Personnel",
-      description:
-        "All our guards undergo rigorous training and continuous professional development.",
-    },
-    {
-      icon: <Eye />,
-      title: "24/7 Monitoring Center",
-      description:
-        "Our state-of-the-art control room operates round the clock for immediate response.",
-    },
-    {
-      icon: <Clock />,
-      title: "Rapid Response Teams",
-      description:
-        "Quick deployment units strategically positioned across service areas.",
-    },
-    {
-      icon: <CheckCircle />,
-      title: "Strict Vetting Process",
-      description:
-        "Comprehensive background checks ensuring trustworthy personnel.",
-    },
-    {
-      icon: <Shield />,
-      title: "Professional Uniforms",
-      description:
-        "Well-groomed, identifiable security personnel representing your brand.",
-    },
-    {
-      icon: <Heart />,
-      title: "Client-Focused Service",
-      description:
-        "Tailored security solutions meeting your specific requirements.",
-    },
-  ];
+  const industries = content.industries.map((item) => ({
+    ...item,
+    icon: getIcon(item.icon),
+  }));
 
-  const testimonials = [
-    {
-      text: "SecureGuard has been instrumental in maintaining the safety of our guests and property. Their professional team provides excellent service round the clock.",
-      author: "James Mwangi",
-      role: "Hotel Manager, Safari Lodge",
-    },
-    {
-      text: "Since engaging SecureGuard, our campus security has significantly improved. Their trained guards and modern systems give us peace of mind.",
-      author: "Dr. Sarah Chen",
-      role: "Principal, International School",
-    },
-    {
-      text: "The professionalism and reliability of SecureGuard's team has made them an invaluable partner in protecting our residential estate.",
-      author: "Michael Ochieng",
-      role: "Property Manager, Green Valley Estates",
-    },
-  ];
+  const whyChooseUs = content.whyChooseUs.map((item) => ({
+    ...item,
+    icon: getIcon(item.icon),
+  }));
+
+  const testimonials = content.testimonials;
+
+  // Show loading state while fetching content
+  if (loading) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          height: "100vh",
+          background: "#0a1628",
+          color: "#D4AF37",
+        }}
+      >
+        <div style={{ textAlign: "center" }}>
+          <Shield size={64} style={{ marginBottom: "16px" }} />
+          <p>Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state if fetch failed
+  if (error) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          height: "100vh",
+          background: "#0a1628",
+          color: "#ff6b6b",
+        }}
+      >
+        <div style={{ textAlign: "center" }}>
+          <p>{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              marginTop: "16px",
+              padding: "8px 16px",
+              background: "#D4AF37",
+              border: "none",
+              borderRadius: "4px",
+              cursor: "pointer",
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <Router>
@@ -268,11 +270,12 @@ function App() {
               <section id="home" className="hero">
                 <div className="hero-content">
                   <h1 className="hero-title">
-                    Professional Security Solutions You Can Trust
+                    {content.hero?.headline ||
+                      "Professional Security Solutions You Can Trust"}
                   </h1>
                   <p className="hero-subtitle">
-                    24/7 protection services for hotels, schools, corporate
-                    offices, and residential estates across Kenya.
+                    {content.hero?.subtitle ||
+                      "24/7 protection services for hotels, schools, corporate offices, and residential estates across Kenya."}
                   </p>
                   <div className="hero-buttons">
                     <a href="#contact" className="btn btn-primary">
@@ -326,18 +329,18 @@ function App() {
                 <div className="about-container">
                   <div className="about-image">
                     <img
-                      src="https://images.unsplash.com/photo-1560250097-0b93528c311a?w=600&q=80"
+                      src={
+                        content.about?.image_url ||
+                        "https://images.unsplash.com/photo-1560250097-0b93528c311a?w=600&q=80"
+                      }
                       alt="Security professionals"
                     />
                   </div>
                   <div className="about-content">
-                    <h2>About SecureGuard</h2>
+                    <h2>{content.about?.title || "About SecureGuard"}</h2>
                     <p>
-                      With over 15 years of experience in the security industry,
-                      SecureGuard has established itself as a trusted partner
-                      for businesses and property owners across Kenya. Our
-                      commitment to excellence and professionalism sets us
-                      apart.
+                      {content.about?.description ||
+                        "With over 15 years of experience in the security industry, SecureGuard has established itself as a trusted partner for businesses and property owners across Kenya. Our commitment to excellence and professionalism sets us apart."}
                     </p>
                     <p>
                       We serve a diverse range of clients including hotels,
@@ -478,30 +481,39 @@ function App() {
               <section className="careers">
                 <div className="careers-container">
                   <div className="careers-content">
-                    <h2>Join Our Team</h2>
+                    <h2>{content.careers?.title || "Join Our Team"}</h2>
                     <p>
-                      SecureGuard is always looking for dedicated professionals
-                      to join our team. If you're committed to excellence and
-                      want a rewarding career in security, we'd like to hear
-                      from you.
+                      {content.careers?.description ||
+                        "SecureGuard is always looking for dedicated professionals to join our team. If you're committed to excellence and want a rewarding career in security, we'd like to hear from you."}
                     </p>
                     <ul className="careers-list">
-                      <li>
-                        <CheckCircle />
-                        <span>Competitive salary and benefits</span>
-                      </li>
-                      <li>
-                        <CheckCircle />
-                        <span>Professional training and development</span>
-                      </li>
-                      <li>
-                        <CheckCircle />
-                        <span>Career growth opportunities</span>
-                      </li>
-                      <li>
-                        <CheckCircle />
-                        <span>Work with a reputable company</span>
-                      </li>
+                      {content.careers?.benefits ? (
+                        content.careers.benefits.map((benefit, index) => (
+                          <li key={index}>
+                            <CheckCircle />
+                            <span>{benefit}</span>
+                          </li>
+                        ))
+                      ) : (
+                        <>
+                          <li>
+                            <CheckCircle />
+                            <span>Competitive salary and benefits</span>
+                          </li>
+                          <li>
+                            <CheckCircle />
+                            <span>Professional training and development</span>
+                          </li>
+                          <li>
+                            <CheckCircle />
+                            <span>Career growth opportunities</span>
+                          </li>
+                          <li>
+                            <CheckCircle />
+                            <span>Work with a reputable company</span>
+                          </li>
+                        </>
+                      )}
                     </ul>
                     <a href="#contact" className="btn btn-primary">
                       Apply Now
@@ -509,7 +521,10 @@ function App() {
                   </div>
                   <div className="careers-image">
                     <img
-                      src="https://images.unsplash.com/photo-1551836022-d5d88e9218df?w=600&q=80"
+                      src={
+                        content.careers?.image_url ||
+                        "https://images.unsplash.com/photo-1551836022-d5d88e9218df?w=600&q=80"
+                      }
                       alt="Security team"
                     />
                   </div>
