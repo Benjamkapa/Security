@@ -1,17 +1,35 @@
+require("dotenv").config();
+
 const express = require("express");
 const cors = require("cors");
-const Database = require("better-sqlite3");
+const mysql = require("mysql2/promise");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 
-// JWT Secret - change this in production!
-const JWT_SECRET = "secureguard-secret-key-change-in-production";
+// JWT Secret from environment variables
+const JWT_SECRET =
+  process.env.JWT_SECRET || "secureguard-secret-key-change-in-production";
+
+// MySQL Configuration from environment variables
+const dbConfig = {
+  host: process.env.DB_HOST || "localhost",
+  port: parseInt(process.env.DB_PORT) || 3306,
+  user: process.env.DB_USER || "root",
+  password: process.env.DB_PASSWORD || "",
+  database: process.env.DB_NAME || "secureguard_db",
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
+};
 
 const app = express();
-const PORT = 3001;
+const PORT = parseInt(process.env.PORT) || 3001;
+
+// Create connection pool
+let pool;
 
 // Middleware
 app.use(cors());
@@ -36,306 +54,371 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// Initialize SQLite Database
-const db = new Database(path.join(__dirname, "database.sqlite"));
+// Initialize MySQL Database
+async function initDatabase() {
+  try {
+    // First connect without database to create it if needed
+    const connection = await mysql.createConnection({
+      host: dbConfig.host,
+      port: dbConfig.port,
+      user: dbConfig.user,
+      password: dbConfig.password,
+    });
 
-// Create tables
-db.exec(`
-  CREATE TABLE IF NOT EXISTS services (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    icon TEXT NOT NULL,
-    title TEXT NOT NULL,
-    description TEXT NOT NULL,
-    display_order INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+    await connection.query(
+      `CREATE DATABASE IF NOT EXISTS ${dbConfig.database}`,
+    );
+    await connection.end();
 
-  CREATE TABLE IF NOT EXISTS testimonials (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    author TEXT NOT NULL,
-    role TEXT NOT NULL,
-    text TEXT NOT NULL,
-    display_order INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+    // Now create pool with database
+    pool = mysql.createPool(dbConfig);
 
-  CREATE TABLE IF NOT EXISTS industries (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    icon TEXT NOT NULL,
-    title TEXT NOT NULL,
-    description TEXT NOT NULL,
-    display_order INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+    // Create tables
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS services (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        icon VARCHAR(100) NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        description TEXT NOT NULL,
+        display_order INT DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
 
-  CREATE TABLE IF NOT EXISTS hero_banners (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    video_url TEXT,
-    image_url TEXT,
-    headline TEXT,
-    subtitle TEXT,
-    is_active INTEGER DEFAULT 1,
-    display_order INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS testimonials (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        author VARCHAR(255) NOT NULL,
+        role VARCHAR(255) NOT NULL,
+        text TEXT NOT NULL,
+        display_order INT DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
 
-  CREATE TABLE IF NOT EXISTS about_content (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    title TEXT,
-    description TEXT,
-    image_url TEXT,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS industries (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        icon VARCHAR(100) NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        description TEXT NOT NULL,
+        display_order INT DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
 
-  CREATE TABLE IF NOT EXISTS why_choose_us (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    icon TEXT NOT NULL,
-    title TEXT NOT NULL,
-    description TEXT NOT NULL,
-    display_order INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS hero_banners (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        video_url TEXT,
+        image_url TEXT,
+        headline VARCHAR(500),
+        subtitle TEXT,
+        is_active INT DEFAULT 1,
+        display_order INT DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
 
-  CREATE TABLE IF NOT EXISTS careers_content (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    title TEXT,
-    description TEXT,
-    image_url TEXT,
-    benefits TEXT,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS about_content (
+        id INT PRIMARY KEY,
+        title VARCHAR(255),
+        description TEXT,
+        image_url TEXT,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )
+    `);
 
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
- username VARCHAR(100) NOT NULL UNIQUE ,
- password VARCHAR(255) NOT NULL ,
- email VARCHAR(255),
- role VARCHAR(50) DEFAULT 'admin',
- created_at DATETIME DEFAULT CURRENT_TIMESTAMP 
-);
-`);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS why_choose_us (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        icon VARCHAR(100) NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        description TEXT NOT NULL,
+        display_order INT DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS careers_content (
+        id INT PRIMARY KEY,
+        title VARCHAR(255),
+        description TEXT,
+        image_url TEXT,
+        benefits TEXT,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        username VARCHAR(100) NOT NULL UNIQUE,
+        password VARCHAR(255) NOT NULL,
+        email VARCHAR(255),
+        role VARCHAR(50) DEFAULT 'admin',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    console.log("MySQL database tables created successfully");
+  } catch (error) {
+    console.error("Error initializing database:", error);
+    throw error;
+  }
+}
 
 // Seed default data if tables are empty
-const seedDefaultData = () => {
-  const servicesCount = db
-    .prepare("SELECT COUNT(*) as count FROM services")
-    .get();
-  if (servicesCount.count === 0) {
-    const insertService = db.prepare(
-      "INSERT INTO services (icon, title, description, display_order) VALUES (?, ?, ?, ?)",
+async function seedDefaultData() {
+  try {
+    const [servicesCount] = await pool.query(
+      "SELECT COUNT(*) as count FROM services",
     );
-    insertService.run(
-      "Users",
-      "Manned Guarding",
-      "Professional security guards providing 24/7 protection for your premises with rigorous training and background checks.",
-      1,
-    );
-    insertService.run(
-      "Eye",
-      "CCTV Installation & Monitoring",
-      "State-of-the-art surveillance systems with real-time monitoring from our advanced control center.",
-      2,
-    );
-    insertService.run(
-      "Bell",
-      "Alarm Response",
-      "Rapid response to alarm activations with our trained security personnel available around the clock.",
-      3,
-    );
-    insertService.run(
-      "Lock",
-      "Access Control Systems",
-      "Advanced biometric and card-based access control systems to manage and restrict facility entry.",
-      4,
-    );
-    insertService.run(
-      "TrendingUp",
-      "Risk Assessment",
-      "Comprehensive security audits and risk assessments to identify vulnerabilities and recommend solutions.",
-      5,
-    );
-    insertService.run(
-      "Award",
-      "Event Security",
-      "Specialized security services for corporate events, conferences, and private functions.",
-      6,
-    );
-  }
+    if (servicesCount[0].count === 0) {
+      const services = [
+        [
+          "Users",
+          "Manned Guarding",
+          "Professional security guards providing 24/7 protection for your premises with rigorous training and background checks.",
+          1,
+        ],
+        [
+          "Eye",
+          "CCTV Installation & Monitoring",
+          "State-of-the-art surveillance systems with real-time monitoring from our advanced control center.",
+          2,
+        ],
+        [
+          "Bell",
+          "Alarm Response",
+          "Rapid response to alarm activations with our trained security personnel available around the clock.",
+          3,
+        ],
+        [
+          "Lock",
+          "Access Control Systems",
+          "Advanced biometric and card-based access control systems to manage and restrict facility entry.",
+          4,
+        ],
+        [
+          "TrendingUp",
+          "Risk Assessment",
+          "Comprehensive security audits and risk assessments to identify vulnerabilities and recommend solutions.",
+          5,
+        ],
+        [
+          "Award",
+          "Event Security",
+          "Specialized security services for corporate events, conferences, and private functions.",
+          6,
+        ],
+      ];
+      for (const service of services) {
+        await pool.query(
+          "INSERT INTO services (icon, title, description, display_order) VALUES (?, ?, ?, ?)",
+          service,
+        );
+      }
+    }
 
-  const testimonialsCount = db
-    .prepare("SELECT COUNT(*) as count FROM testimonials")
-    .get();
-  if (testimonialsCount.count === 0) {
-    const insertTestimonial = db.prepare(
-      "INSERT INTO testimonials (author, role, text, display_order) VALUES (?, ?, ?, ?)",
+    const [testimonialsCount] = await pool.query(
+      "SELECT COUNT(*) as count FROM testimonials",
     );
-    insertTestimonial.run(
-      "James Mwangi",
-      "Hotel Manager, Safari Lodge",
-      "SecureGuard has been instrumental in maintaining the safety of our guests and property. Their professional team provides excellent service round the clock.",
-      1,
-    );
-    insertTestimonial.run(
-      "Dr. Sarah Chen",
-      "Principal, International School",
-      "Since engaging SecureGuard, our campus security has significantly improved. Their trained guards and modern systems give us peace of mind.",
-      2,
-    );
-    insertTestimonial.run(
-      "Michael Ochieng",
-      "Property Manager, Green Valley Estates",
-      "The professionalism and reliability of SecureGuard's team has made them an invaluable partner in protecting our residential estate.",
-      3,
-    );
-  }
+    if (testimonialsCount[0].count === 0) {
+      const testimonials = [
+        [
+          "James Mwangi",
+          "Hotel Manager, Safari Lodge",
+          "SecureGuard has been instrumental in maintaining the safety of our guests and property. Their professional team provides excellent service round the clock.",
+          1,
+        ],
+        [
+          "Dr. Sarah Chen",
+          "Principal, International School",
+          "Since engaging SecureGuard, our campus security has significantly improved. Their trained guards and modern systems give us peace of mind.",
+          2,
+        ],
+        [
+          "Michael Ochieng",
+          "Property Manager, Green Valley Estates",
+          "The professionalism and reliability of SecureGuard's team has made them an invaluable partner in protecting our residential estate.",
+          3,
+        ],
+      ];
+      for (const testimonial of testimonials) {
+        await pool.query(
+          "INSERT INTO testimonials (author, role, text, display_order) VALUES (?, ?, ?, ?)",
+          testimonial,
+        );
+      }
+    }
 
-  const industriesCount = db
-    .prepare("SELECT COUNT(*) as count FROM industries")
-    .get();
-  if (industriesCount.count === 0) {
-    const insertIndustry = db.prepare(
-      "INSERT INTO industries (icon, title, description, display_order) VALUES (?, ?, ?, ?)",
+    const [industriesCount] = await pool.query(
+      "SELECT COUNT(*) as count FROM industries",
     );
-    insertIndustry.run(
-      "Building",
-      "Hotels",
-      "Trained guards ensuring guest safety and property protection.",
-      1,
-    );
-    insertIndustry.run(
-      "GraduationCap",
-      "Schools",
-      "Safe learning environments with controlled access management.",
-      2,
-    );
-    insertIndustry.run(
-      "Briefcase",
-      "Corporate",
-      "Comprehensive security for offices and business premises.",
-      3,
-    );
-    insertIndustry.run(
-      "Home",
-      "Estates",
-      "Residential community security with patrol services.",
-      4,
-    );
-    insertIndustry.run(
-      "Factory",
-      "Industrial",
-      "Heavy-duty security for factories and warehouses.",
-      5,
-    );
-  }
+    if (industriesCount[0].count === 0) {
+      const industries = [
+        [
+          "Building",
+          "Hotels",
+          "Trained guards ensuring guest safety and property protection.",
+          1,
+        ],
+        [
+          "GraduationCap",
+          "Schools",
+          "Safe learning environments with controlled access management.",
+          2,
+        ],
+        [
+          "Briefcase",
+          "Corporate",
+          "Comprehensive security for offices and business premises.",
+          3,
+        ],
+        [
+          "Home",
+          "Estates",
+          "Residential community security with patrol services.",
+          4,
+        ],
+        [
+          "Factory",
+          "Industrial",
+          "Heavy-duty security for factories and warehouses.",
+          5,
+        ],
+      ];
+      for (const industry of industries) {
+        await pool.query(
+          "INSERT INTO industries (icon, title, description, display_order) VALUES (?, ?, ?, ?)",
+          industry,
+        );
+      }
+    }
 
-  const whyChooseUsCount = db
-    .prepare("SELECT COUNT(*) as count FROM why_choose_us")
-    .get();
-  if (whyChooseUsCount.count === 0) {
-    const insertWhy = db.prepare(
-      "INSERT INTO why_choose_us (icon, title, description, display_order) VALUES (?, ?, ?, ?)",
+    const [whyChooseUsCount] = await pool.query(
+      "SELECT COUNT(*) as count FROM why_choose_us",
     );
-    insertWhy.run(
-      "Users",
-      "Highly Trained Personnel",
-      "All our guards undergo rigorous training and continuous professional development.",
-      1,
-    );
-    insertWhy.run(
-      "Eye",
-      "24/7 Monitoring Center",
-      "Our state-of-the-art control room operates round the clock for immediate response.",
-      2,
-    );
-    insertWhy.run(
-      "Clock",
-      "Rapid Response Teams",
-      "Quick deployment units strategically positioned across service areas.",
-      3,
-    );
-    insertWhy.run(
-      "CheckCircle",
-      "Strict Vetting Process",
-      "Comprehensive background checks ensuring trustworthy personnel.",
-      4,
-    );
-    insertWhy.run(
-      "Shield",
-      "Professional Uniforms",
-      "Well-groomed, identifiable security personnel representing your brand.",
-      5,
-    );
-    insertWhy.run(
-      "Heart",
-      "Client-Focused Service",
-      "Tailored security solutions meeting your specific requirements.",
-      6,
-    );
-  }
+    if (whyChooseUsCount[0].count === 0) {
+      const whyChooseUs = [
+        [
+          "Users",
+          "Highly Trained Personnel",
+          "All our guards undergo rigorous training and continuous professional development.",
+          1,
+        ],
+        [
+          "Eye",
+          "24/7 Monitoring Center",
+          "Our state-of-the-art control room operates round the clock for immediate response.",
+          2,
+        ],
+        [
+          "Clock",
+          "Rapid Response Teams",
+          "Quick deployment units strategically positioned across service areas.",
+          3,
+        ],
+        [
+          "CheckCircle",
+          "Strict Vetting Process",
+          "Comprehensive background checks ensuring trustworthy personnel.",
+          4,
+        ],
+        [
+          "Shield",
+          "Professional Uniforms",
+          "Well-groomed, identifiable security personnel representing your brand.",
+          5,
+        ],
+        [
+          "Heart",
+          "Client-Focused Service",
+          "Tailored security solutions meeting your specific requirements.",
+          6,
+        ],
+      ];
+      for (const item of whyChooseUs) {
+        await pool.query(
+          "INSERT INTO why_choose_us (icon, title, description, display_order) VALUES (?, ?, ?, ?)",
+          item,
+        );
+      }
+    }
 
-  const heroCount = db
-    .prepare("SELECT COUNT(*) as count FROM hero_banners")
-    .get();
-  if (heroCount.count === 0) {
-    const insertHero = db.prepare(
-      "INSERT INTO hero_banners (video_url, image_url, headline, subtitle, is_active, display_order) VALUES (?, ?, ?, ?, ?, ?)",
+    const [heroCount] = await pool.query(
+      "SELECT COUNT(*) as count FROM hero_banners",
     );
-    insertHero.run(
-      "",
-      "https://images.unsplash.com/photo-1557597774-9d273605dfa9?w=1920&q=80",
-      "Professional Security Solutions You Can Trust",
-      "24/7 protection services for hotels, schools, corporate offices, and residential estates across Kenya.",
-      1,
-      1,
-    );
-  }
+    if (heroCount[0].count === 0) {
+      await pool.query(
+        "INSERT INTO hero_banners (video_url, image_url, headline, subtitle, is_active, display_order) VALUES (?, ?, ?, ?, ?, ?)",
+        [
+          "",
+          "https://images.unsplash.com/photo-1557597774-9d273605dfa9?w=1920&q=80",
+          "Professional Security Solutions You Can Trust",
+          "24/7 protection services for hotels, schools, corporate offices, and residential estates across Kenya.",
+          1,
+          1,
+        ],
+      );
+    }
 
-  const aboutCount = db
-    .prepare("SELECT COUNT(*) as count FROM about_content")
-    .get();
-  if (aboutCount.count === 0) {
-    const insertAbout = db.prepare(
-      "INSERT INTO about_content (title, description, image_url) VALUES (?, ?, ?)",
+    const [aboutCount] = await pool.query(
+      "SELECT COUNT(*) as count FROM about_content",
     );
-    insertAbout.run(
-      "About SecureGuard",
-      "With over 15 years of experience in the security industry, SecureGuard has established itself as a trusted partner for businesses and property owners across Kenya. Our commitment to excellence and professionalism sets us apart.",
-      "https://images.unsplash.com/photo-1560250097-0b93528c311a?w=600&q=80",
-    );
-  }
+    if (aboutCount[0].count === 0) {
+      await pool.query(
+        "INSERT INTO about_content (id, title, description, image_url) VALUES (1, ?, ?, ?)",
+        [
+          "About SecureGuard",
+          "With over 15 years of experience in the security industry, SecureGuard has established itself as a trusted partner for businesses and property owners across Kenya. Our commitment to excellence and professionalism sets us apart.",
+          "https://images.unsplash.com/photo-1560250097-0b93528c311a?w=600&q=80",
+        ],
+      );
+    }
 
-  const careersCount = db
-    .prepare("SELECT COUNT(*) as count FROM careers_content")
-    .get();
-  if (careersCount.count === 0) {
-    const insertCareers = db.prepare(
-      "INSERT INTO careers_content (title, description, image_url, benefits) VALUES (?, ?, ?, ?)",
+    const [careersCount] = await pool.query(
+      "SELECT COUNT(*) as count FROM careers_content",
     );
-    insertCareers.run(
-      "Join Our Team",
-      "SecureGuard is always looking for dedicated professionals to join our team. If you're committed to excellence and want a rewarding career in security, we'd like to hear from you.",
-      "https://images.unsplash.com/photo-1551836022-d5d88e9218df?w=600&q=80",
-      JSON.stringify([
+    if (careersCount[0].count === 0) {
+      const benefits = JSON.stringify([
         "Competitive salary and benefits",
         "Professional training and development",
         "Career growth opportunities",
         "Work with a reputable company",
-      ]),
-    );
-  }
+      ]);
+      await pool.query(
+        "INSERT INTO careers_content (id, title, description, image_url, benefits) VALUES (1, ?, ?, ?, ?)",
+        [
+          "Join Our Team",
+          "SecureGuard is always looking for dedicated professionals to join our team. If you're committed to excellence and want a rewarding career in security, we'd like to hear from you.",
+          "https://images.unsplash.com/photo-1551836022-d5d88e9218df?w=600&q=80",
+          benefits,
+        ],
+      );
+    }
 
-  // Create default admin user if not exists
-  const usersCount = db.prepare("SELECT COUNT(*) as count FROM users").get();
-  if (usersCount.count === 0) {
-    const hashedPassword = bcrypt.hashSync("admin123", 10);
-    db.prepare(
-      "INSERT INTO users (username ,password ,email ,role) VALUES (? ,? ,? ,?)",
-    ).run("admin", hashedPassword, "admin@secureguard.co .ke", "admin");
-    console.log(
-      "Default admin user created - username: admin password :admin123",
+    // Create default admin user if not exists
+    const [usersCount] = await pool.query(
+      "SELECT COUNT(*) as count FROM users",
     );
+    if (usersCount[0].count === 0) {
+      const hashedPassword = bcrypt.hashSync("admin123", 10);
+      await pool.query(
+        "INSERT INTO users (username, password, email, role) VALUES (?, ?, ?, ?)",
+        ["admin", hashedPassword, "admin@secureguard.co.ke", "admin"],
+      );
+      console.log(
+        "Default admin user created - username: admin, password: admin123",
+      );
+    }
+  } catch (error) {
+    console.error("Error seeding data:", error);
   }
-};
+}
 
 // Auth Middleware
 function authenticateToken(req, res, next) {
@@ -353,6 +436,126 @@ function authenticateToken(req, res, next) {
   });
 }
 
+// Database Status Endpoint
+app.get("/api/db-status", async (req, res) => {
+  try {
+    if (!pool) {
+      return res.status(503).json({
+        connected: false,
+        message: "Database pool not initialized",
+      });
+    }
+    // Try a simple query to check connection
+    await pool.query("SELECT 1");
+    res.json({
+      connected: true,
+      message: "Connected to database",
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("Database connection error:", error);
+    res.status(503).json({
+      connected: false,
+      message: error.message || "Database connection failed",
+    });
+  }
+});
+
+// Reset admin password endpoint (for development only)
+app.post("/api/auth/reset-admin", async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!password) {
+      return res.status(400).json({ error: "New password required" });
+    }
+    const hashedPassword = bcrypt.hashSync(password, 10);
+    await pool.query("UPDATE users SET password = ? WHERE username = 'admin'", [
+      hashedPassword,
+    ]);
+    res.json({ success: true, message: "Admin password reset successfully" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to reset password" });
+  }
+});
+
+// Users API
+app.get("/api/users", async (req, res) => {
+  try {
+    const [users] = await pool.query(
+      "SELECT id, username, email, role, status, created_at, last_login FROM users ORDER BY created_at DESC",
+    );
+    res.json(users);
+  } catch (error) {
+    console.error("Error fetching users:", error);
+    res.status(500).json({ error: "Failed to fetch users" });
+  }
+});
+
+app.get("/api/users/count", async (req, res) => {
+  try {
+    const [result] = await pool.query("SELECT COUNT(*) as count FROM users");
+    res.json({ count: result[0].count });
+  } catch (error) {
+    console.error("Error fetching users count:", error);
+    res.status(500).json({ error: "Failed to fetch users count" });
+  }
+});
+
+app.post("/api/users", async (req, res) => {
+  try {
+    const { name, email, role, password, status } = req.body;
+    if (!name || !email || !password) {
+      return res
+        .status(400)
+        .json({ error: "Name, email and password are required" });
+    }
+    const hashedPassword = bcrypt.hashSync(password, 10);
+    const [result] = await pool.query(
+      "INSERT INTO users (name, email, role, password, status) VALUES (?, ?, ?, ?, ?)",
+      [name, email, role || "Viewer", hashedPassword, status || "active"],
+    );
+    res.json({ id: result.insertId, message: "User created successfully" });
+  } catch (error) {
+    console.error("Error creating user:", error);
+    res.status(500).json({ error: "Failed to create user" });
+  }
+});
+
+app.put("/api/users/:id", async (req, res) => {
+  try {
+    const { name, email, role, password, status } = req.body;
+    const userId = req.params.id;
+
+    let query = "UPDATE users SET name = ?, email = ?, role = ?, status = ?";
+    let params = [name, email, role, status];
+
+    if (password) {
+      query += ", password = ?";
+      params.push(bcrypt.hashSync(password, 10));
+    }
+
+    query += " WHERE id = ?";
+    params.push(userId);
+
+    await pool.query(query, params);
+    res.json({ message: "User updated successfully" });
+  } catch (error) {
+    console.error("Error updating user:", error);
+    res.status(500).json({ error: "Failed to update user" });
+  }
+});
+
+app.delete("/api/users/:id", async (req, res) => {
+  try {
+    await pool.query("DELETE FROM users WHERE id = ?", [req.params.id]);
+    res.json({ message: "User deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting user:", error);
+    res.status(500).json({ error: "Failed to delete user" });
+  }
+});
+
 // Auth Routes
 app.post("/api/auth/login", async (req, res) => {
   try {
@@ -360,9 +563,10 @@ app.post("/api/auth/login", async (req, res) => {
     if (!username || !password) {
       return res.status(400).json({ error: "Username and password required" });
     }
-    const user = db
-      .prepare("SELECT * FROM users WHERE username = ?")
-      .get(username);
+    const [users] = await pool.query("SELECT * FROM users WHERE username = ?", [
+      username,
+    ]);
+    const user = users[0];
     if (!user) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
@@ -394,215 +598,342 @@ app.get("/api/auth/verify", authenticateToken, (req, res) => {
   res.json({ valid: true });
 });
 
-seedDefaultData();
-
 // ==================== API ROUTES ====================
 
 // Services CRUD
-app.get("/api/services", (req, res) => {
-  const services = db
-    .prepare("SELECT * FROM services ORDER BY display_order")
-    .all();
-  res.json(services);
+app.get("/api/services", async (req, res) => {
+  try {
+    const [services] = await pool.query(
+      "SELECT * FROM services ORDER BY display_order",
+    );
+    res.json(services);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to fetch services" });
+  }
 });
 
-app.post("/api/services", (req, res) => {
-  const { icon, title, description, display_order } = req.body;
-  const result = db
-    .prepare(
+app.post("/api/services", async (req, res) => {
+  try {
+    const { icon, title, description, display_order } = req.body;
+    const [result] = await pool.query(
       "INSERT INTO services (icon, title, description, display_order) VALUES (?, ?, ?, ?)",
-    )
-    .run(icon, title, description, display_order || 0);
-  res.json({ id: result.lastInsertRowid });
+      [icon, title, description, display_order || 0],
+    );
+    res.json({ id: result.insertId });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to create service" });
+  }
 });
 
-app.put("/api/services/:id", (req, res) => {
-  const { icon, title, description, display_order } = req.body;
-  db.prepare(
-    "UPDATE services SET icon = ?, title = ?, description = ?, display_order = ? WHERE id = ?",
-  ).run(icon, title, description, display_order || 0, req.params.id);
-  res.json({ success: true });
+app.put("/api/services/:id", async (req, res) => {
+  try {
+    const { icon, title, description, display_order } = req.body;
+    await pool.query(
+      "UPDATE services SET icon = ?, title = ?, description = ?, display_order = ? WHERE id = ?",
+      [icon, title, description, display_order || 0, req.params.id],
+    );
+    res.json({ success: true });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to update service" });
+  }
 });
 
-app.delete("/api/services/:id", (req, res) => {
-  db.prepare("DELETE FROM services WHERE id = ?").run(req.params.id);
-  res.json({ success: true });
+app.delete("/api/services/:id", async (req, res) => {
+  try {
+    await pool.query("DELETE FROM services WHERE id = ?", [req.params.id]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to delete service" });
+  }
 });
 
 // Testimonials CRUD
-app.get("/api/testimonials", (req, res) => {
-  const testimonials = db
-    .prepare("SELECT * FROM testimonials ORDER BY display_order")
-    .all();
-  res.json(testimonials);
+app.get("/api/testimonials", async (req, res) => {
+  try {
+    const [testimonials] = await pool.query(
+      "SELECT * FROM testimonials ORDER BY display_order",
+    );
+    res.json(testimonials);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to fetch testimonials" });
+  }
 });
 
-app.post("/api/testimonials", (req, res) => {
-  const { author, role, text, display_order } = req.body;
-  const result = db
-    .prepare(
+app.post("/api/testimonials", async (req, res) => {
+  try {
+    const { author, role, text, display_order } = req.body;
+    const [result] = await pool.query(
       "INSERT INTO testimonials (author, role, text, display_order) VALUES (?, ?, ?, ?)",
-    )
-    .run(author, role, text, display_order || 0);
-  res.json({ id: result.lastInsertRowid });
+      [author, role, text, display_order || 0],
+    );
+    res.json({ id: result.insertId });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to create testimonial" });
+  }
 });
 
-app.put("/api/testimonials/:id", (req, res) => {
-  const { author, role, text, display_order } = req.body;
-  db.prepare(
-    "UPDATE testimonials SET author = ?, role = ?, text = ?, display_order = ? WHERE id = ?",
-  ).run(author, role, text, display_order || 0, req.params.id);
-  res.json({ success: true });
+app.put("/api/testimonials/:id", async (req, res) => {
+  try {
+    const { author, role, text, display_order } = req.body;
+    await pool.query(
+      "UPDATE testimonials SET author = ?, role = ?, text = ?, display_order = ? WHERE id = ?",
+      [author, role, text, display_order || 0, req.params.id],
+    );
+    res.json({ success: true });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to update testimonial" });
+  }
 });
 
-app.delete("/api/testimonials/:id", (req, res) => {
-  db.prepare("DELETE FROM testimonials WHERE id = ?").run(req.params.id);
-  res.json({ success: true });
+app.delete("/api/testimonials/:id", async (req, res) => {
+  try {
+    await pool.query("DELETE FROM testimonials WHERE id = ?", [req.params.id]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to delete testimonial" });
+  }
 });
 
 // Industries CRUD
-app.get("/api/industries", (req, res) => {
-  const industries = db
-    .prepare("SELECT * FROM industries ORDER BY display_order")
-    .all();
-  res.json(industries);
+app.get("/api/industries", async (req, res) => {
+  try {
+    const [industries] = await pool.query(
+      "SELECT * FROM industries ORDER BY display_order",
+    );
+    res.json(industries);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to fetch industries" });
+  }
 });
 
-app.post("/api/industries", (req, res) => {
-  const { icon, title, description, display_order } = req.body;
-  const result = db
-    .prepare(
+app.post("/api/industries", async (req, res) => {
+  try {
+    const { icon, title, description, display_order } = req.body;
+    const [result] = await pool.query(
       "INSERT INTO industries (icon, title, description, display_order) VALUES (?, ?, ?, ?)",
-    )
-    .run(icon, title, description, display_order || 0);
-  res.json({ id: result.lastInsertRowid });
+      [icon, title, description, display_order || 0],
+    );
+    res.json({ id: result.insertId });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to create industry" });
+  }
 });
 
-app.put("/api/industries/:id", (req, res) => {
-  const { icon, title, description, display_order } = req.body;
-  db.prepare(
-    "UPDATE industries SET icon = ?, title = ?, description = ?, display_order = ? WHERE id = ?",
-  ).run(icon, title, description, display_order || 0, req.params.id);
-  res.json({ success: true });
+app.put("/api/industries/:id", async (req, res) => {
+  try {
+    const { icon, title, description, display_order } = req.body;
+    await pool.query(
+      "UPDATE industries SET icon = ?, title = ?, description = ?, display_order = ? WHERE id = ?",
+      [icon, title, description, display_order || 0, req.params.id],
+    );
+    res.json({ success: true });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to update industry" });
+  }
 });
 
-app.delete("/api/industries/:id", (req, res) => {
-  db.prepare("DELETE FROM industries WHERE id = ?").run(req.params.id);
-  res.json({ success: true });
+app.delete("/api/industries/:id", async (req, res) => {
+  try {
+    await pool.query("DELETE FROM industries WHERE id = ?", [req.params.id]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to delete industry" });
+  }
 });
 
 // Hero Banner CRUD
-app.get("/api/hero", (req, res) => {
-  const hero = db
-    .prepare(
+app.get("/api/hero", async (req, res) => {
+  try {
+    const [hero] = await pool.query(
       "SELECT * FROM hero_banners WHERE is_active = 1 ORDER BY display_order LIMIT 1",
-    )
-    .get();
-  res.json(hero || {});
+    );
+    res.json(hero[0] || {});
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to fetch hero" });
+  }
 });
 
-app.post("/api/hero", (req, res) => {
-  const { video_url, image_url, headline, subtitle, is_active, display_order } =
-    req.body;
-  // Deactivate all other banners
-  db.prepare("UPDATE hero_banners SET is_active = 0").run();
-  const result = db
-    .prepare(
-      "INSERT INTO hero_banners (video_url, image_url, headline, subtitle, is_active, display_order) VALUES (?, ?, ?, ?, ?, ?)",
-    )
-    .run(
+app.post("/api/hero", async (req, res) => {
+  try {
+    const {
       video_url,
       image_url,
       headline,
       subtitle,
-      is_active ? 1 : 0,
-      display_order || 0,
+      is_active,
+      display_order,
+    } = req.body;
+    // Deactivate all other banners
+    await pool.query("UPDATE hero_banners SET is_active = 0");
+    const [result] = await pool.query(
+      "INSERT INTO hero_banners (video_url, image_url, headline, subtitle, is_active, display_order) VALUES (?, ?, ?, ?, ?, ?)",
+      [
+        video_url,
+        image_url,
+        headline,
+        subtitle,
+        is_active ? 1 : 0,
+        display_order || 0,
+      ],
     );
-  res.json({ id: result.lastInsertRowid });
+    res.json({ id: result.insertId });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to create hero" });
+  }
 });
 
-app.put("/api/hero/:id", (req, res) => {
-  const { video_url, image_url, headline, subtitle, is_active, display_order } =
-    req.body;
-  if (is_active) {
-    db.prepare("UPDATE hero_banners SET is_active = 0").run();
+app.put("/api/hero/:id", async (req, res) => {
+  try {
+    const {
+      video_url,
+      image_url,
+      headline,
+      subtitle,
+      is_active,
+      display_order,
+    } = req.body;
+    if (is_active) {
+      await pool.query("UPDATE hero_banners SET is_active = 0");
+    }
+    await pool.query(
+      "UPDATE hero_banners SET video_url = ?, image_url = ?, headline = ?, subtitle = ?, is_active = ?, display_order = ? WHERE id = ?",
+      [
+        video_url,
+        image_url,
+        headline,
+        subtitle,
+        is_active ? 1 : 0,
+        display_order || 0,
+        req.params.id,
+      ],
+    );
+    res.json({ success: true });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to update hero" });
   }
-  db.prepare(
-    "UPDATE hero_banners SET video_url = ?, image_url = ?, headline = ?, subtitle = ?, is_active = ?, display_order = ? WHERE id = ?",
-  ).run(
-    video_url,
-    image_url,
-    headline,
-    subtitle,
-    is_active ? 1 : 0,
-    display_order || 0,
-    req.params.id,
-  );
-  res.json({ success: true });
 });
 
 // About Content
-app.get("/api/about", (req, res) => {
-  const about = db.prepare("SELECT * FROM about_content WHERE id = 1").get();
-  res.json(about || {});
+app.get("/api/about", async (req, res) => {
+  try {
+    const [about] = await pool.query(
+      "SELECT * FROM about_content WHERE id = 1",
+    );
+    res.json(about[0] || {});
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to fetch about content" });
+  }
 });
 
-app.put("/api/about", (req, res) => {
-  const { title, description, image_url } = req.body;
-  db.prepare(
-    "UPDATE about_content SET title = ?, description = ?, image_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1",
-  ).run(title, description, image_url);
-  res.json({ success: true });
+app.put("/api/about", async (req, res) => {
+  try {
+    const { title, description, image_url } = req.body;
+    await pool.query(
+      "UPDATE about_content SET title = ?, description = ?, image_url = ? WHERE id = 1",
+      [title, description, image_url],
+    );
+    res.json({ success: true });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to update about content" });
+  }
 });
 
 // Careers Content
-app.get("/api/careers", (req, res) => {
-  const careers = db
-    .prepare("SELECT * FROM careers_content WHERE id = 1")
-    .get();
-  if (careers && careers.benefits) {
-    careers.benefits = JSON.parse(careers.benefits);
+app.get("/api/careers", async (req, res) => {
+  try {
+    const [careers] = await pool.query(
+      "SELECT * FROM careers_content WHERE id = 1",
+    );
+    if (careers[0] && careers[0].benefits) {
+      careers[0].benefits = JSON.parse(careers[0].benefits);
+    }
+    res.json(careers[0] || {});
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to fetch careers content" });
   }
-  res.json(careers || {});
 });
 
-app.put("/api/careers", (req, res) => {
-  const { title, description, image_url, benefits } = req.body;
-  db.prepare(
-    "UPDATE careers_content SET title = ?, description = ?, image_url = ?, benefits = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1",
-  ).run(title, description, image_url, JSON.stringify(benefits));
-  res.json({ success: true });
+app.put("/api/careers", async (req, res) => {
+  try {
+    const { title, description, image_url, benefits } = req.body;
+    await pool.query(
+      "UPDATE careers_content SET title = ?, description = ?, image_url = ?, benefits = ? WHERE id = 1",
+      [title, description, image_url, JSON.stringify(benefits)],
+    );
+    res.json({ success: true });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to update careers content" });
+  }
 });
 
 // Why Choose Us CRUD
-app.get("/api/why-choose-us", (req, res) => {
-  const items = db
-    .prepare("SELECT * FROM why_choose_us ORDER BY display_order")
-    .all();
-  res.json(items);
+app.get("/api/why-choose-us", async (req, res) => {
+  try {
+    const [items] = await pool.query(
+      "SELECT * FROM why_choose_us ORDER BY display_order",
+    );
+    res.json(items);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to fetch why choose us items" });
+  }
 });
 
-app.post("/api/why-choose-us", (req, res) => {
-  const { icon, title, description, display_order } = req.body;
-  const result = db
-    .prepare(
+app.post("/api/why-choose-us", async (req, res) => {
+  try {
+    const { icon, title, description, display_order } = req.body;
+    const [result] = await pool.query(
       "INSERT INTO why_choose_us (icon, title, description, display_order) VALUES (?, ?, ?, ?)",
-    )
-    .run(icon, title, description, display_order || 0);
-  res.json({ id: result.lastInsertRowid });
+      [icon, title, description, display_order || 0],
+    );
+    res.json({ id: result.insertId });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to create why choose us item" });
+  }
 });
 
-app.put("/api/why-choose-us/:id", (req, res) => {
-  const { icon, title, description, display_order } = req.body;
-  db.prepare(
-    "UPDATE why_choose_us SET icon = ?, title = ?, description = ?, display_order = ? WHERE id = ?",
-  ).run(icon, title, description, display_order || 0, req.params.id);
-  res.json({ success: true });
+app.put("/api/why-choose-us/:id", async (req, res) => {
+  try {
+    const { icon, title, description, display_order } = req.body;
+    await pool.query(
+      "UPDATE why_choose_us SET icon = ?, title = ?, description = ?, display_order = ? WHERE id = ?",
+      [icon, title, description, display_order || 0, req.params.id],
+    );
+    res.json({ success: true });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to update why choose us item" });
+  }
 });
 
-app.delete("/api/why-choose-us/:id", (req, res) => {
-  db.prepare("DELETE FROM why_choose_us WHERE id = ?").run(req.params.id);
-  res.json({ success: true });
+app.delete("/api/why-choose-us/:id", async (req, res) => {
+  try {
+    await pool.query("DELETE FROM why_choose_us WHERE id = ?", [req.params.id]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to delete why choose us item" });
+  }
 });
 
 // File upload endpoint
@@ -617,32 +948,63 @@ app.post("/api/upload", upload.single("file"), (req, res) => {
 });
 
 // Get all content (for preview)
-app.get("/api/all-content", (req, res) => {
-  const content = {
-    services: db.prepare("SELECT * FROM services ORDER BY display_order").all(),
-    testimonials: db
-      .prepare("SELECT * FROM testimonials ORDER BY display_order")
-      .all(),
-    industries: db
-      .prepare("SELECT * FROM industries ORDER BY display_order")
-      .all(),
-    whyChooseUs: db
-      .prepare("SELECT * FROM why_choose_us ORDER BY display_order")
-      .all(),
-    hero: db
-      .prepare(
-        "SELECT * FROM hero_banners WHERE is_active = 1 ORDER BY display_order LIMIT 1",
-      )
-      .get(),
-    about: db.prepare("SELECT * FROM about_content WHERE id = 1").get(),
-    careers: db.prepare("SELECT * FROM careers_content WHERE id = 1").get(),
-  };
-  if (content.careers && content.careers.benefits) {
-    content.careers.benefits = JSON.parse(content.careers.benefits);
+app.get("/api/all-content", async (req, res) => {
+  try {
+    const [services] = await pool.query(
+      "SELECT * FROM services ORDER BY display_order",
+    );
+    const [testimonials] = await pool.query(
+      "SELECT * FROM testimonials ORDER BY display_order",
+    );
+    const [industries] = await pool.query(
+      "SELECT * FROM industries ORDER BY display_order",
+    );
+    const [whyChooseUs] = await pool.query(
+      "SELECT * FROM why_choose_us ORDER BY display_order",
+    );
+    const [hero] = await pool.query(
+      "SELECT * FROM hero_banners WHERE is_active = 1 ORDER BY display_order LIMIT 1",
+    );
+    const [about] = await pool.query(
+      "SELECT * FROM about_content WHERE id = 1",
+    );
+    const [careers] = await pool.query(
+      "SELECT * FROM careers_content WHERE id = 1",
+    );
+
+    const content = {
+      services,
+      testimonials,
+      industries,
+      whyChooseUs,
+      hero: hero[0] || {},
+      about: about[0] || {},
+      careers: careers[0] || {},
+    };
+
+    if (content.careers && content.careers.benefits) {
+      content.careers.benefits = JSON.parse(content.careers.benefits);
+    }
+
+    res.json(content);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to fetch all content" });
   }
-  res.json(content);
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-});
+// Start server
+async function startServer() {
+  try {
+    await initDatabase();
+    await seedDefaultData();
+    app.listen(PORT, () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
+  } catch (error) {
+    console.error("Failed to start server:", error);
+    process.exit(1);
+  }
+}
+
+startServer();

@@ -3,7 +3,7 @@ import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { Shield, Eye, EyeOff, AlertCircle } from "lucide-react";
 
-const API_BASE = "http://localhost:3001/api";
+const API_BASE = import.meta.env.VITE_API_BASE;
 
 function Login({ onLogin }) {
   const [username, setUsername] = useState("");
@@ -77,6 +77,7 @@ function Login({ onLogin }) {
             }}
           >
             <Shield size={36} color="#D4AF37" />
+            {/* <a href="https://secureguard.co.ke" target="_blank" rel="noopener noreferrer"> */}
           </div>
           <h1
             style={{

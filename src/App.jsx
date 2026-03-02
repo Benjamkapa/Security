@@ -267,11 +267,19 @@ function App() {
               </header>
 
               {/* HERO SECTION */}
-              <section id="home" className="hero">
-                <div className="hero-content">
-                  <h1 className="hero-title">
-                    {content.hero?.headline ||
-                      "Professional Security Solutions You Can Trust"}
+              <section 
+                  id="home" 
+                  className="hero"
+                style={{
+                    backgroundImage: content.hero?.image_url 
+                      ? `linear-gradient(135deg, rgba(11, 31, 58, 0.85) 0%, rgba(11, 31, 58, 0.7) 100%), url("${content.hero.image_url}")`
+                      : undefined
+                  }}
+                >
+                  <div className="hero-content">
+                    <h1 className="hero-title">
+                      {content.hero?.headline ||
+                        "Professional Security Solutions You Can Trust"}
                   </h1>
                   <p className="hero-subtitle">
                     {content.hero?.subtitle ||
@@ -330,8 +338,7 @@ function App() {
                   <div className="about-image">
                     <img
                       src={
-                        content.about?.image_url ||
-                        "https://images.unsplash.com/photo-1560250097-0b93528c311a?w=600&q=80"
+                        content.about?.image_url
                       }
                       alt="Security professionals"
                     />
@@ -522,8 +529,7 @@ function App() {
                   <div className="careers-image">
                     <img
                       src={
-                        content.careers?.image_url ||
-                        "https://images.unsplash.com/photo-1551836022-d5d88e9218df?w=600&q=80"
+                        content.careers?.image_url
                       }
                       alt="Security team"
                     />

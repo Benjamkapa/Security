@@ -656,7 +656,7 @@ img {
   content: '"';
   font-size: 60px;
   color: var(--accent-gold);
-  font-family: Georgia, serif;
+  font-family: Comic 'Gill Sans', 'Gill Sans MT', Calibri, 'Trebuchet MS', sans-serif;
   line-height: 1;
 }
 
@@ -1084,7 +1084,35 @@ img {
     --section-padding: 60px 20px;
   }
 
+  .header {
+    position: relative;
+  }
+
   .nav {
+    display: none;
+    position: absolute;
+    top: 80px;
+    left: 0;
+    right: 0;
+    background-color: var(--primary-navy);
+    flex-direction: column;
+    padding: 20px;
+    gap: 0;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+  }
+
+  .nav.active {
+    display: flex;
+  }
+
+  .nav-link {
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    width: 100%;
+    text-align: center;
+  }
+
+  .nav-link::after {
     display: none;
   }
 
